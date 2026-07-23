@@ -1,6 +1,4 @@
-import json
 import logging
-import os
 from typing import Any
 
 from .config import (
@@ -8,176 +6,57 @@ from .config import (
     INITIAL_BALANCE,
     MAX_BET,
     MAX_LOSS_STREAK,
-    STATE_FILE,
 )
 
 
-logger = logging.getLogger(
-    __name__
-)
+logger = logging.getLogger(__name__)
 
 
 class PaperTrader:
 
-    def __init__(self):
-
-        self.state = {
-            "balance": INITIAL_BALANCE,
-
-            "initial_balance": INITIAL_BALANCE,
-
-            "total_bets": 0,
-
-            "wins": 0,
-
-            "losses": 0,
-
-            "total_profit": 0,
-
-            "max_loss_streak": 0,
-
-            "current_loss_streak": 0,
-
-            "max_bet": 0,
-
-            "active_trades": {},
-
-            "trade_history": [],
-        }
-
-
-        self.load()
-
-
-    def load(self):
-
-        if not os.path.exists(
-            STATE_FILE
-        ):
-
-            return
-
-
-        try:
-
-            with open(
-                STATE_FILE,
-                "r",
-                encoding="utf-8"
-            ) as file:
-
-                loaded = json.load(
-                    file
-                )
-
-
-                paper_state = loaded.get(
-                    "paper_trading"
-                )
-
-
-                if isinstance(
-                    paper_state,
-                    dict
-                ):
-
-                    self.state.update(
-                        paper_state
-                    )
-
-
-        except Exception:
-
-            logger.exception(
-                "Could not load paper trading state"
-            )
-
-
-    def save(
+    def __init__(
         self,
-        full_state: dict
+        state: dict[str, Any]
     ):
 
-        directory = os.path.dirname(
-            STATE_FILE
-        )
+        if "paper_trading" not in state:
+
+            state[
+                "paper_trading"
+            ] = {
+                "balance": INITIAL_BALANCE,
+
+                "initial_balance": (
+                    INITIAL_BALANCE
+                ),
+
+                "total_bets": 0,
+
+                "wins": 0,
+
+                "losses": 0,
+
+                "total_profit": 0.0,
+
+                "current_loss_streak": 0,
+
+                "max_loss_streak": 0,
+
+                "max_bet": 0.0,
+
+                "active_trades": {},
+
+                "trade_history": [],
+            }
 
 
-        if directory:
-
-            os.makedirs(
-                directory,
-                exist_ok=True
-            )
-
-
-        full_state[
+        self.state = state[
             "paper_trading"
-        ] = self.state
+        ]
 
 
-        temporary_file = (
-            f"{STATE_FILE}.tmp"
-        )
-
-
-        with open(
-            temporary_file,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            json.dump(
-                full_state,
-                file,
-                ensure_ascii=False,
-                indent=2
-            )
-
-
-        os.replace(
-            temporary_file,
-            STATE_FILE
-        )
-
-
-    def reset(
-        self,
-        full_state: dict
-    ):
-
-        self.state = {
-            "balance": INITIAL_BALANCE,
-
-            "initial_balance": INITIAL_BALANCE,
-
-            "total_bets": 0,
-
-            "wins": 0,
-
-            "losses": 0,
-
-            "total_profit": 0,
-
-            "max_loss_streak": 0,
-
-            "current_loss_streak": 0,
-
-            "max_bet": 0,
-
-            "active_trades": {},
-
-            "trade_history": [],
-        }
-
-
-        self.save(
-            full_state
-        )
-
-
+    @staticmethod
     def opposite(
-        self,
         outcome: str
     ) -> str:
 
@@ -190,23 +69,12 @@ class PaperTrader:
 
     def open_trade(
         self,
-        alert: dict[str, Any],
-        full_state: dict
+        alert: dict[str, Any]
     ) -> dict[str, Any] | None:
 
         coin = alert[
             "coin"
         ]
-
-
-        signal_outcome = alert[
-            "outcome"
-        ]
-
-
-        bet_outcome = self.opposite(
-            signal_outcome
-        )
 
 
         if coin in self.state[
@@ -216,12 +84,24 @@ class PaperTrader:
             return None
 
 
+        bet_outcome = (
+            self.opposite(
+                alert[
+                    "outcome"
+                ]
+            )
+        )
+
+
         bet_size = BASE_BET
 
 
-        if bet_size > self.state[
-            "balance"
-        ]:
+        if (
+            self.state[
+                "balance"
+            ]
+            < bet_size
+        ):
 
             return None
 
@@ -230,7 +110,9 @@ class PaperTrader:
 
             "coin": coin,
 
-            "signal_outcome": signal_outcome,
+            "signal_outcome": alert[
+                "outcome"
+            ],
 
             "bet_outcome": bet_outcome,
 
@@ -270,18 +152,12 @@ class PaperTrader:
         )
 
 
-        self.save(
-            full_state
-        )
-
-
         return trade
 
 
     def resolve_trade(
         self,
-        market: dict[str, Any],
-        full_state: dict
+        market: dict[str, Any]
     ) -> dict[str, Any] | None:
 
         coin = market[
@@ -289,17 +165,17 @@ class PaperTrader:
         ]
 
 
-        active_trades = self.state[
+        active = self.state[
             "active_trades"
         ]
 
 
-        if coin not in active_trades:
+        if coin not in active:
 
             return None
 
 
-        trade = active_trades[
+        trade = active[
             coin
         ]
 
@@ -313,7 +189,7 @@ class PaperTrader:
             return None
 
 
-        actual_outcome = market[
+        actual = market[
             "outcome"
         ]
 
@@ -330,7 +206,12 @@ class PaperTrader:
         )
 
 
-        if actual_outcome == bet_outcome:
+        self.state[
+            "total_bets"
+        ] += 1
+
+
+        if actual == bet_outcome:
 
             profit = bet_size
 
@@ -350,11 +231,6 @@ class PaperTrader:
             ] += 1
 
 
-            self.state[
-                "total_bets"
-            ] += 1
-
-
             result = {
 
                 "type": "WIN",
@@ -363,7 +239,7 @@ class PaperTrader:
 
                 "bet_outcome": bet_outcome,
 
-                "actual_outcome": actual_outcome,
+                "actual_outcome": actual,
 
                 "bet_size": bet_size,
 
@@ -375,9 +251,14 @@ class PaperTrader:
             }
 
 
-            del active_trades[
+            del active[
                 coin
             ]
+
+
+            self.state[
+                "current_loss_streak"
+            ] = 0
 
 
         else:
@@ -397,11 +278,6 @@ class PaperTrader:
 
             self.state[
                 "losses"
-            ] += 1
-
-
-            self.state[
-                "total_bets"
             ] += 1
 
 
@@ -430,10 +306,13 @@ class PaperTrader:
             )
 
 
-            next_bet = bet_size * 2
+            next_bet = (
+                bet_size * 2
+            )
 
 
             if (
+
                 next_bet > MAX_BET
 
                 or trade[
@@ -454,7 +333,7 @@ class PaperTrader:
 
                     "bet_outcome": bet_outcome,
 
-                    "actual_outcome": actual_outcome,
+                    "actual_outcome": actual,
 
                     "bet_size": bet_size,
 
@@ -468,7 +347,7 @@ class PaperTrader:
                 }
 
 
-                del active_trades[
+                del active[
                     coin
                 ]
 
@@ -499,7 +378,7 @@ class PaperTrader:
 
                     "bet_outcome": bet_outcome,
 
-                    "actual_outcome": actual_outcome,
+                    "actual_outcome": actual,
 
                     "bet_size": bet_size,
 
@@ -528,18 +407,15 @@ class PaperTrader:
             "trade_history"
         ] = self.state[
             "trade_history"
-        ][-1000:]
-
-
-        self.save(
-            full_state
-        )
+        ][
+            -1000:
+        ]
 
 
         return result
 
 
-    def get_stats(
+    def stats(
         self
     ) -> dict[str, Any]:
 
@@ -554,7 +430,9 @@ class PaperTrader:
 
 
         win_rate = (
-            wins / total * 100
+            wins
+            / total
+            * 100
             if total > 0
             else 0
         )
@@ -600,10 +478,37 @@ class PaperTrader:
         }
 
 
-    def get_active_trades(
+    def reset(
         self
-    ) -> dict:
+    ):
 
-        return self.state[
-            "active_trades"
-        ]
+        self.state.clear()
+
+
+        self.state.update(
+            {
+                "balance": INITIAL_BALANCE,
+
+                "initial_balance": (
+                    INITIAL_BALANCE
+                ),
+
+                "total_bets": 0,
+
+                "wins": 0,
+
+                "losses": 0,
+
+                "total_profit": 0.0,
+
+                "current_loss_streak": 0,
+
+                "max_loss_streak": 0,
+
+                "max_bet": 0.0,
+
+                "active_trades": {},
+
+                "trade_history": [],
+            }
+    )
