@@ -4,15 +4,12 @@ import os
 from typing import Any
 
 from .config import (
-    HISTORY_LENGTH,
     STATE_FILE,
     STREAK_TRIGGER,
 )
 
 
-logger = logging.getLogger(
-    __name__
-)
+logger = logging.getLogger(__name__)
 
 
 class StreakTracker:
@@ -21,9 +18,9 @@ class StreakTracker:
 
         self.state = {
             "processed_markets": [],
-            "coins": {},
+            "coin_history": {},
+            "alerted_streaks": {},
         }
-
 
         self.load()
 
@@ -50,14 +47,20 @@ class StreakTracker:
                 )
 
 
-                if isinstance(
-                    loaded,
-                    dict
-                ):
+            if isinstance(
+                loaded,
+                dict
+            ):
 
-                    self.state.update(
-                        loaded
-                    )
+                for key in self.state:
+
+                    if key in loaded:
+
+                        self.state[
+                            key
+                        ] = loaded[
+                            key
+                        ]
 
 
         except Exception:
@@ -82,13 +85,14 @@ class StreakTracker:
             )
 
 
-        temporary_file = (
-            f"{STATE_FILE}.tmp"
+        temporary = (
+            STATE_FILE
+            + ".tmp"
         )
 
 
         with open(
-            temporary_file,
+            temporary,
             "w",
             encoding="utf-8"
         ) as file:
@@ -102,101 +106,127 @@ class StreakTracker:
 
 
         os.replace(
-            temporary_file,
+            temporary,
             STATE_FILE
         )
 
 
-    def process_market(
+    def process_markets(
         self,
-        market: dict[str, Any]
-    ) -> dict[str, Any] | None:
-
-        market_id = market[
-            "market_id"
+        markets: list[
+            dict[str, Any]
         ]
+    ) -> list[
+        dict[str, Any]
+    ]:
+
+        alerts = []
 
 
-        if market_id in self.state[
-            "processed_markets"
-        ]:
-
-            return None
-
-
-        coin = market[
-            "coin"
-        ]
-
-
-        outcome = market[
-            "outcome"
-        ]
-
-
-        coins = self.state[
-            "coins"
-        ]
-
-
-        if coin not in coins:
-
-            coins[coin] = {
-                "history": [],
-                "last_alert_signature": None,
-            }
-
-
-        coin_state = coins[
-            coin
-        ]
-
-
-        history = coin_state[
-            "history"
-        ]
-
-
-        history.append(
-            {
-                "outcome": outcome,
-
-                "market_id": market_id,
-
-                "end_date": market.get(
+        markets = sorted(
+            markets,
+            key=lambda item: (
+                item.get(
                     "end_date"
-                ),
-            }
+                )
+                or ""
+            )
         )
 
 
-        coin_state[
-            "history"
-        ] = history[
-            -HISTORY_LENGTH:
-        ]
+        for market in markets:
+
+            market_id = market[
+                "market_id"
+            ]
 
 
-        self.state[
-            "processed_markets"
-        ].append(
-            market_id
-        )
+            if market_id in self.state[
+                "processed_markets"
+            ]:
+
+                continue
 
 
-        self.state[
-            "processed_markets"
-        ] = self.state[
-            "processed_markets"
-        ][-3000:]
+            coin = market[
+                "coin"
+            ]
 
 
-        alert = None
+            outcome = market[
+                "outcome"
+            ]
 
 
-        if len(
-            history
-        ) >= STREAK_TRIGGER:
+            if coin not in self.state[
+                "coin_history"
+            ]:
+
+                self.state[
+                    "coin_history"
+                ][
+                    coin
+                ] = []
+
+
+            history = self.state[
+                "coin_history"
+            ][
+                coin
+            ]
+
+
+            history.append(
+                {
+                    "market_id": market_id,
+
+                    "outcome": outcome,
+
+                    "end_date": market.get(
+                        "end_date"
+                    ),
+                }
+            )
+
+
+            # Оставляем последние 20
+            self.state[
+                "coin_history"
+            ][
+                coin
+            ] = history[
+                -20:
+            ]
+
+
+            self.state[
+                "processed_markets"
+            ].append(
+                market_id
+            )
+
+
+            self.state[
+                "processed_markets"
+            ] = self.state[
+                "processed_markets"
+            ][
+                -3000:
+            ]
+
+
+            history = self.state[
+                "coin_history"
+            ][
+                coin
+            ]
+
+
+            if len(
+                history
+            ) < STREAK_TRIGGER:
+
+                continue
 
 
             last_items = history[
@@ -217,108 +247,91 @@ class StreakTracker:
                 set(
                     outcomes
                 )
-            ) == 1:
+            ) != 1:
+
+                continue
 
 
-                outcome = outcomes[
-                    0
+            streak_outcome = outcomes[
+                0
+            ]
+
+
+            last_market_id = (
+                last_items[
+                    -1
+                ][
+                    "market_id"
                 ]
+            )
 
 
-                signature = (
-                    f"{coin}:"
-                    f"{outcome}:"
-                    f"{last_items[-1]['market_id']}"
+            signature = (
+                coin
+                + ":"
+                + streak_outcome
+                + ":"
+                + last_market_id
+            )
+
+
+            previous_signature = (
+                self.state[
+                    "alerted_streaks"
+                ].get(
+                    coin
                 )
+            )
 
 
-                previous_signature = (
-                    coin_state.get(
-                        "last_alert_signature"
-                    )
-                )
+            if (
+                signature
+                == previous_signature
+            ):
+
+                continue
 
 
-                if (
-                    signature
-                    != previous_signature
-                ):
+            self.state[
+                "alerted_streaks"
+            ][
+                coin
+            ] = signature
 
 
-                    coin_state[
-                        "last_alert_signature"
-                    ] = signature
+            alerts.append(
+                {
+                    "coin": coin,
 
+                    "outcome": streak_outcome,
 
-                    alert = {
-                        "coin": coin,
+                    "history": outcomes,
 
-                        "outcome": outcome,
-
-                        "history": outcomes,
-
-                        "market": market,
-                    }
+                    "market": market,
+                }
+            )
 
 
         self.save()
 
 
-        return alert
-
-
-    def process_markets(
-        self,
-        markets: list[
-            dict[str, Any]
-        ]
-    ) -> list[
-        dict[str, Any]
-    ]:
-
-        alerts = []
-
-
-        sorted_markets = sorted(
-            markets,
-
-            key=lambda item: (
-                item.get(
-                    "end_date"
-                )
-                or ""
-            )
-        )
-
-
-        for market in sorted_markets:
-
-            alert = self.process_market(
-                market
-            )
-
-
-            if alert:
-
-                alerts.append(
-                    alert
-                )
-
-
         return alerts
 
 
-    def get_history(
-        self,
-        coin: str
-    ) -> list[dict]:
+    def reset_history(
+        self
+    ):
 
-        return self.state[
-            "coins"
-        ].get(
-            coin,
-            {}
-        ).get(
-            "history",
-            []
-        )
+        self.state[
+            "processed_markets"
+        ] = []
+
+        self.state[
+            "coin_history"
+        ] = {}
+
+        self.state[
+            "alerted_streaks"
+        ] = {}
+
+        self.save()
