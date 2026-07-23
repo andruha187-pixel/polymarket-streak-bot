@@ -7,6 +7,12 @@ GAMMA_API_URL = os.getenv(
 )
 
 
+TELEGRAM_API_URL = os.getenv(
+    "TELEGRAM_API_URL",
+    "https://api.telegram.org"
+)
+
+
 TELEGRAM_BOT_TOKEN = os.getenv(
     "TELEGRAM_BOT_TOKEN",
     ""
