@@ -1,6 +1,12 @@
 import os
 
 
+GAMMA_API_URL = os.getenv(
+    "GAMMA_API_URL",
+    "https://gamma-api.polymarket.com"
+)
+
+
 TELEGRAM_BOT_TOKEN = os.getenv(
     "TELEGRAM_BOT_TOKEN",
     ""
