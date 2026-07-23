@@ -4,14 +4,12 @@ import time
 from .config import (
     PAPER_TRADING_ENABLED,
     POLL_INTERVAL_SECONDS,
+    TELEGRAM_CHAT_ID,
 )
-from .paper_trading import (
-    PaperTrader,
-)
-from .polymarket import (
-    get_recent_closed_markets,
-)
+from .paper_trading import PaperTrader
+from .polymarket import get_recent_closed_markets
 from .telegram import (
+    format_open_trade,
     format_stats,
     format_status,
     format_streak_alert,
@@ -19,9 +17,7 @@ from .telegram import (
     get_updates,
     send_message,
 )
-from .tracker import (
-    StreakTracker,
-)
+from .tracker import StreakTracker
 
 
 logging.basicConfig(
@@ -32,7 +28,7 @@ logging.basicConfig(
         "%(asctime)s "
         "%(levelname)s "
         "%(message)s"
-    ),
+    )
 )
 
 
@@ -41,17 +37,110 @@ logger = logging.getLogger(
 )
 
 
+def process_command(
+    text: str,
+    tracker: StreakTracker,
+    trader: PaperTrader
+):
+
+    command = text.strip().lower()
+
+
+    if command == "/start":
+
+        send_message(
+
+            "🤖 <b>Polymarket Paper Bot</b>\n\n"
+
+            "Стратегия:\n"
+
+            "5 одинаковых YES/NO → "
+            "ставка на противоположный исход.\n\n"
+
+            "LOSS → ставка ×2.\n"
+
+            "WIN → возврат к базовой ставке.\n\n"
+
+            "/stats — статистика\n"
+
+            "/status — активные ставки\n"
+
+            "/reset — сбросить paper trading\n"
+
+            "/help — помощь"
+        )
+
+
+    elif command == "/help":
+
+        send_message(
+
+            "📚 <b>КОМАНДЫ</b>\n\n"
+
+            "/start\n"
+
+            "/stats\n"
+
+            "/status\n"
+
+            "/reset\n"
+
+            "/help"
+        )
+
+
+    elif command == "/stats":
+
+        send_message(
+            format_stats(
+                trader.stats()
+            )
+        )
+
+
+    elif command == "/status":
+
+        send_message(
+
+            format_status(
+
+                trader.stats(),
+
+                trader.state[
+                    "active_trades"
+                ]
+            )
+        )
+
+
+    elif command == "/reset":
+
+        trader.reset()
+
+        tracker.reset_history()
+
+        send_message(
+
+            "♻️ <b>СБРОС ВЫПОЛНЕН</b>\n\n"
+
+            f"💰 Баланс: "
+            f"<b>{trader.state['balance']:.2f}</b> USDC"
+        )
+
+
 def main():
 
     logger.info(
-        "Polymarket Paper Trading Bot started"
+        "Bot started"
     )
 
 
     tracker = StreakTracker()
 
 
-    trader = PaperTrader()
+    trader = PaperTrader(
+        tracker.state
+    )
 
 
     telegram_offset = None
@@ -63,10 +152,6 @@ def main():
     while True:
 
         try:
-
-            # =========================
-            # TELEGRAM COMMANDS
-            # =========================
 
             updates = get_updates(
                 telegram_offset
@@ -93,12 +178,6 @@ def main():
                     continue
 
 
-                text = message.get(
-                    "text",
-                    ""
-                ).strip().lower()
-
-
                 chat_id = str(
                     message[
                         "chat"
@@ -109,118 +188,27 @@ def main():
 
 
                 if chat_id != str(
-                    __import__(
-                        "os"
-                    ).getenv(
-                        "TELEGRAM_CHAT_ID"
-                    )
+                    TELEGRAM_CHAT_ID
                 ):
 
                     continue
 
 
-                if text == "/stats":
-
-                    stats = (
-                        trader.get_stats()
-                    )
-
-
-                    send_message(
-                        format_stats(
-                            stats
-                        )
-                    )
+                text = message.get(
+                    "text",
+                    ""
+                )
 
 
-                elif text == "/status":
+                process_command(
 
-                    stats = (
-                        trader.get_stats()
-                    )
+                    text,
 
+                    tracker,
 
-                    active = (
-                        trader.get_active_trades()
-                    )
+                    trader
+                )
 
-
-                    send_message(
-                        format_status(
-                            stats,
-                            active
-                        )
-                    )
-
-
-                elif text == "/reset":
-
-                    full_state = (
-                        tracker.state
-                    )
-
-
-                    trader.reset(
-                        full_state
-                    )
-
-
-                    send_message(
-
-                        "♻️ <b>PAPER TRADING "
-                        "СБРОШЕН</b>\n\n"
-
-                        "💰 Баланс: "
-                        "<b>100 USDC</b>"
-                    )
-
-
-                elif text == "/start":
-
-                    send_message(
-
-                        "🤖 <b>Polymarket "
-                        "Paper Trading Bot</b>\n\n"
-
-                        "Команды:\n"
-
-                        "/stats — статистика\n"
-
-                        "/status — активные сделки\n"
-
-                        "/reset — сбросить виртуальный "
-                        "баланс\n\n"
-
-                        "Стратегия:\n"
-
-                        "5 одинаковых результатов → "
-                        "ставка против серии\n"
-
-                        "LOSS → ставка ×2"
-                    )
-
-
-                elif text == "/help":
-
-                    send_message(
-
-                        "📚 <b>КОМАНДЫ</b>\n\n"
-
-                        "/start\n"
-
-                        "/stats\n"
-
-                        "/status\n"
-
-                        "/reset\n"
-
-                        "/help"
-                    )
-
-
-            # =========================
-            # MARKET DATA
-            # =========================
 
             now = time.time()
 
@@ -231,8 +219,12 @@ def main():
                 >= POLL_INTERVAL_SECONDS
             ):
 
-
                 last_market_check = now
+
+
+                logger.info(
+                    "Checking markets..."
+                )
 
 
                 markets = (
@@ -242,7 +234,7 @@ def main():
 
                 logger.info(
 
-                    "Received %s markets",
+                    "Found %s suitable markets",
 
                     len(
                         markets
@@ -250,15 +242,14 @@ def main():
                 )
 
 
-                # Сначала разрешаем
-                # уже открытые paper trades
+                # 1. Сначала закрываем
+                # активные paper-сделки
 
                 for market in markets:
 
                     result = (
                         trader.resolve_trade(
-                            market,
-                            tracker.state
+                            market
                         )
                     )
 
@@ -266,14 +257,15 @@ def main():
                     if result:
 
                         send_message(
+
                             format_trade_result(
                                 result
                             )
                         )
 
 
-                # Потом добавляем новые рынки
-                # в историю серий
+                # 2. Затем добавляем новые
+                # рынки в историю
 
                 alerts = (
                     tracker.process_markets(
@@ -282,9 +274,13 @@ def main():
                 )
 
 
+                # 3. Открываем новые
+                # виртуальные сделки
+
                 for alert in alerts:
 
                     send_message(
+
                         format_streak_alert(
                             alert
                         )
@@ -295,8 +291,7 @@ def main():
 
                         trade = (
                             trader.open_trade(
-                                alert,
-                                tracker.state
+                                alert
                             )
                         )
 
@@ -305,20 +300,9 @@ def main():
 
                             send_message(
 
-                                "🎯 <b>PAPER TRADE "
-                                "OPENED</b>\n\n"
-
-                                f"🪙 "
-                                f"<b>{trade['coin']}</b>\n"
-
-                                f"📊 После серии: "
-                                f"<b>{trade['signal_outcome']}</b>\n"
-
-                                f"🎯 Ставка против: "
-                                f"<b>{trade['bet_outcome']}</b>\n"
-
-                                f"💵 Размер: "
-                                f"<b>{trade['bet_size']:.2f}</b> USDC"
+                                format_open_trade(
+                                    trade
+                                )
                             )
 
 
