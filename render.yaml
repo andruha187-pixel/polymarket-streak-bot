@@ -1,0 +1,57 @@
+services:
+  - type: worker
+
+    name: polymarket-streak-bot
+
+    runtime: python
+
+    region: frankfurt
+
+    plan: starter
+
+    buildCommand: pip install -r requirements.txt
+
+    startCommand: python -m bot.main
+
+    envVars:
+
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+
+      - key: POLL_INTERVAL_SECONDS
+        value: "20"
+
+      - key: STREAK_TRIGGER
+        value: "5"
+
+      - key: HISTORY_LENGTH
+        value: "20"
+
+      - key: INITIAL_BALANCE
+        value: "100"
+
+      - key: BASE_BET
+        value: "1"
+
+      - key: MAX_BET
+        value: "32"
+
+      - key: MAX_LOSS_STREAK
+        value: "10"
+
+      - key: PAPER_TRADING_ENABLED
+        value: "true"
+
+      - key: STATE_FILE
+        value: "/var/data/state.json"
+
+    disk:
+
+      name: polymarket-data
+
+      mountPath: /var/data
+
+      sizeGB: 1
