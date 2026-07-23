@@ -1,29 +1,15 @@
 import os
 
 
-def env_str(name: str, default: str | None = None) -> str:
-    value = os.getenv(name, default)
-
-    if value is None or value == "":
-        raise RuntimeError(
-            f"Environment variable {name} is not set"
-        )
-
-    return value
-
-
-TELEGRAM_BOT_TOKEN = env_str(
-    "TELEGRAM_BOT_TOKEN"
-)
-
-TELEGRAM_CHAT_ID = env_str(
-    "TELEGRAM_CHAT_ID"
+TELEGRAM_BOT_TOKEN = os.getenv(
+    "TELEGRAM_BOT_TOKEN",
+    ""
 )
 
 
-GAMMA_API_URL = os.getenv(
-    "GAMMA_API_URL",
-    "https://gamma-api.polymarket.com"
+TELEGRAM_CHAT_ID = os.getenv(
+    "TELEGRAM_CHAT_ID",
+    ""
 )
 
 
@@ -87,11 +73,4 @@ PAPER_TRADING_ENABLED = (
 STATE_FILE = os.getenv(
     "STATE_FILE",
     "/tmp/state.json"
-)
-)
-
-
-TELEGRAM_API_URL = (
-    "https://api.telegram.org/bot"
-    + TELEGRAM_BOT_TOKEN
 )
