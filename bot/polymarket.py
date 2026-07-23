@@ -8,9 +8,7 @@ import requests
 from .config import GAMMA_API_URL
 
 
-logger = logging.getLogger(
-    __name__
-)
+logger = logging.getLogger(__name__)
 
 
 SESSION = requests.Session()
@@ -18,31 +16,14 @@ SESSION = requests.Session()
 SESSION.headers.update(
     {
         "User-Agent": (
-            "Polymarket-Streak-Bot/1.0"
+            "Polymarket-Streak-Bot/2.0"
         )
     }
 )
 
 
-def get_json(
-    url: str,
-    params: dict[str, Any] | None = None
-) -> Any:
-
-    response = SESSION.get(
-        url,
-        params=params,
-        timeout=30
-    )
-
-    response.raise_for_status()
-
-    return response.json()
-
-
-def parse_json_field(
-    value: Any,
-    default: Any
+def parse_json_value(
+    value: Any
 ) -> Any:
 
     if isinstance(
@@ -58,21 +39,19 @@ def parse_json_field(
         value,
         str
     ):
-        return default
+        return []
 
     try:
 
-        return json.loads(
-            value
-        )
+        return json.loads(value)
 
     except json.JSONDecodeError:
 
-        return default
+        return []
 
 
 def parse_datetime(
-    value: str | None
+    value: Any
 ) -> datetime | None:
 
     if not value:
@@ -81,31 +60,76 @@ def parse_datetime(
 
     try:
 
-        value = value.replace(
-            "Z",
-            "+00:00"
+        text = str(value)
+
+        if text.endswith("Z"):
+
+            text = text[:-1] + "+00:00"
+
+        result = datetime.fromisoformat(
+            text
         )
 
-        dt = datetime.fromisoformat(
-            value
-        )
+        if result.tzinfo is None:
 
-        if dt.tzinfo is None:
-
-            dt = dt.replace(
+            result = result.replace(
                 tzinfo=timezone.utc
             )
 
-        return dt
+        return result
 
     except ValueError:
 
         return None
 
 
+def request_json(
+    endpoint: str,
+    params: dict[str, Any]
+) -> Any:
+
+    url = (
+        GAMMA_API_URL
+        + endpoint
+    )
+
+    response = SESSION.get(
+        url,
+        params=params,
+        timeout=30
+    )
+
+    response.raise_for_status()
+
+    return response.json()
+
+
 def is_five_minute_market(
     market: dict[str, Any]
 ) -> bool:
+
+    start = parse_datetime(
+        market.get(
+            "startDate"
+        )
+    )
+
+    end = parse_datetime(
+        market.get(
+            "endDate"
+        )
+    )
+
+    if start is not None and end is not None:
+
+        duration = (
+            end - start
+        ).total_seconds()
+
+        if 240 <= duration <= 420:
+
+            return True
+
 
     text = " ".join(
         [
@@ -142,70 +166,26 @@ def is_five_minute_market(
     ]
 
 
-    if any(
+    return any(
         marker in text
         for marker in markers
-    ):
-
-        return True
-
-
-    start = parse_datetime(
-        market.get(
-            "startDate"
-        )
     )
-
-
-    end = parse_datetime(
-        market.get(
-            "endDate"
-        )
-    )
-
-
-    if start and end:
-
-        duration = (
-            end - start
-        ).total_seconds()
-
-
-        if 240 <= duration <= 420:
-
-            return True
-
-
-    return False
 
 
 def get_winning_outcome(
     market: dict[str, Any]
 ) -> str | None:
 
-    """
-    Основной метод:
-    в закрытом бинарном рынке победивший outcome
-    обычно имеет цену около 1.0.
-
-    Дополнительно поддерживаем tokens/winner,
-    если эти поля присутствуют.
-    """
-
-
-    outcomes = parse_json_field(
+    outcomes = parse_json_value(
         market.get(
             "outcomes"
-        ),
-        []
+        )
     )
 
-
-    prices = parse_json_field(
+    prices = parse_json_value(
         market.get(
             "outcomePrices"
-        ),
-        []
+        )
     )
 
 
@@ -223,138 +203,86 @@ def get_winning_outcome(
         and len(
             outcomes
         )
-
         == len(
             prices
         )
     ):
 
 
-        for outcome, price in zip(
-            outcomes,
-            prices
-        ):
+        normalized_outcomes = [
+            str(
+                item
+            ).strip().upper()
+            for item in outcomes
+        ]
+
+
+        numeric_prices = []
+
+
+        for price in prices:
 
             try:
 
-                price_float = float(
-                    price
+                numeric_prices.append(
+                    float(
+                        price
+                    )
                 )
 
             except (
-                ValueError,
-                TypeError
+                TypeError,
+                ValueError
             ):
 
-                continue
+                numeric_prices.append(
+                    -1
+                )
 
 
-            if price_float >= 0.99:
-
-                normalized = str(
-                    outcome
-                ).strip().upper()
+        candidates = []
 
 
-                if normalized in {
-                    "YES",
-                    "NO"
-                }:
+        for outcome, price in zip(
+            normalized_outcomes,
+            numeric_prices
+        ):
 
-                    return normalized
-
-
-    tokens = market.get(
-        "tokens"
-    )
-
-
-    if isinstance(
-        tokens,
-        list
-    ):
-
-
-        for token in tokens:
-
-            if not isinstance(
-                token,
-                dict
-            ):
-
-                continue
-
-
-            if token.get(
-                "winner"
-            ) is True:
-
-                outcome = str(
-                    token.get(
-                        "outcome",
-                        ""
-                    )
-                ).strip().upper()
-
-
-                if outcome in {
-                    "YES",
-                    "NO"
-                }:
-
-                    return outcome
-
-
-    for key in [
-        "winningOutcome",
-        "winning_outcome",
-        "winner",
-    ]:
-
-        value = market.get(
-            key
-        )
-
-
-        if value:
-
-            normalized = str(
-                value
-            ).strip().upper()
-
-
-            if normalized in {
+            if outcome in {
                 "YES",
                 "NO"
             }:
 
-                return normalized
+                candidates.append(
+                    (
+                        outcome,
+                        price
+                    )
+                )
+
+
+        if candidates:
+
+            winner = max(
+                candidates,
+                key=lambda item: item[1]
+            )
+
+
+            if winner[1] >= 0.95:
+
+                return winner[0]
 
 
     return None
 
 
-def extract_coin_name(
-    event: dict[str, Any],
+def extract_coin(
     market: dict[str, Any]
 ) -> str:
 
     text = " ".join(
         [
-            str(
-                event.get(
-                    "title",
-                    ""
-                )
-            ),
-
-            str(
-                event.get(
-                    "slug",
-                    ""
-                )
-            ),
-
             str(
                 market.get(
                     "question",
@@ -368,11 +296,15 @@ def extract_coin_name(
                     ""
                 )
             ),
+
+            str(
+                market.get(
+                    "ticker",
+                    ""
+                )
+            ),
         ]
-    )
-
-
-    text = text.upper()
+    ).upper()
 
 
     known_coins = [
@@ -424,157 +356,172 @@ def extract_coin_name(
             return coin
 
 
-    slug = str(
-        event.get(
-            "slug"
-        )
-        or market.get(
-            "slug"
-        )
-        or ""
+    return "UNKNOWN"
+
+
+def fetch_closed_markets_page(
+    offset: int
+) -> list[dict[str, Any]]:
+
+    data = request_json(
+        "/markets",
+        {
+            "closed": "true",
+            "limit": 100,
+            "offset": offset,
+            "order": "endDate",
+            "ascending": "false",
+        }
     )
 
 
-    if slug:
+    if not isinstance(
+        data,
+        list
+    ):
 
-        first_part = slug.split(
-            "-"
-        )[0]
-
-
-        if first_part:
-
-            return first_part.upper()
+        return []
 
 
-    return "UNKNOWN"
+    return data
 
 
 def get_recent_closed_markets(
 ) -> list[dict[str, Any]]:
 
-    url = (
-        f"{GAMMA_API_URL}/events"
-    )
+    all_markets = []
 
 
-    params = {
-        "tag_slug": "crypto",
-        "closed": "true",
-        "active": "false",
-        "archived": "false",
-        "limit": 500,
-        "order": "endDate",
-        "ascending": "false",
-    }
+    for offset in [
+        0,
+        100,
+        200,
+        300,
+        400,
+    ]:
+
+        try:
+
+            page = (
+                fetch_closed_markets_page(
+                    offset
+                )
+            )
+
+        except Exception:
+
+            logger.exception(
+                "Failed to fetch markets"
+            )
+
+            break
 
 
-    events = get_json(
-        url,
-        params=params
-    )
+        if not page:
+
+            break
 
 
-    if not isinstance(
-        events,
-        list
-    ):
-
-        logger.warning(
-            "Unexpected API response"
+        all_markets.extend(
+            page
         )
 
-        return []
+
+        if len(
+            page
+        ) < 100:
+
+            break
 
 
     result = []
 
 
-    for event in events:
+    for market in all_markets:
 
-        markets = event.get(
-            "markets",
-            []
-        )
-
-
-        if not isinstance(
-            markets,
-            list
+        if not market.get(
+            "closed",
+            False
         ):
 
             continue
 
 
-        for market in markets:
+        if not is_five_minute_market(
+            market
+        ):
 
-            if not market.get(
-                "closed",
-                False
-            ):
-
-                continue
+            continue
 
 
-            if not is_five_minute_market(
-                market
-            ):
-
-                continue
+        outcome = get_winning_outcome(
+            market
+        )
 
 
-            outcome = get_winning_outcome(
-                market
-            )
+        if outcome not in {
+            "YES",
+            "NO"
+        }:
+
+            continue
 
 
-            if outcome not in {
-                "YES",
-                "NO"
-            }:
-
-                continue
+        market_id = market.get(
+            "id"
+        )
 
 
-            coin = extract_coin_name(
-                event,
-                market
-            )
+        if not market_id:
+
+            continue
 
 
-            result.append(
-                {
-                    "market_id": str(
-                        market.get(
-                            "id"
-                        )
-                    ),
+        result.append(
+            {
+                "market_id": str(
+                    market_id
+                ),
 
-                    "event_id": str(
-                        event.get(
-                            "id"
-                        )
-                    ),
+                "coin": extract_coin(
+                    market
+                ),
 
-                    "coin": coin,
+                "outcome": outcome,
 
-                    "outcome": outcome,
+                "end_date": market.get(
+                    "endDate"
+                ),
 
-                    "end_date": market.get(
-                        "endDate"
-                    ),
+                "start_date": market.get(
+                    "startDate"
+                ),
 
-                    "question": market.get(
-                        "question",
-                        ""
-                    ),
+                "question": market.get(
+                    "question",
+                    ""
+                ),
 
-                    "slug": market.get(
-                        "slug",
-                        ""
-                    ),
-                }
-            )
+                "slug": market.get(
+                    "slug",
+                    ""
+                ),
+            }
+        )
 
 
-    return result
+    unique = {}
+
+
+    for market in result:
+
+        unique[
+            market[
+                "market_id"
+            ]
+        ] = market
+
+
+    return list(
+        unique.values()
+    )
