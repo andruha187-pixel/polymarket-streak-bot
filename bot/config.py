@@ -1,10 +1,10 @@
 import os
 
 
-def get_required_env(name: str) -> str:
-    value = os.getenv(name)
+def env_str(name: str, default: str | None = None) -> str:
+    value = os.getenv(name, default)
 
-    if not value:
+    if value is None or value == "":
         raise RuntimeError(
             f"Environment variable {name} is not set"
         )
@@ -12,28 +12,20 @@ def get_required_env(name: str) -> str:
     return value
 
 
-TELEGRAM_BOT_TOKEN = get_required_env(
+TELEGRAM_BOT_TOKEN = env_str(
     "TELEGRAM_BOT_TOKEN"
 )
 
-TELEGRAM_CHAT_ID = get_required_env(
+TELEGRAM_CHAT_ID = env_str(
     "TELEGRAM_CHAT_ID"
 )
 
-
-# =========================
-# POLYMARKET
-# =========================
 
 GAMMA_API_URL = os.getenv(
     "GAMMA_API_URL",
     "https://gamma-api.polymarket.com"
 )
 
-
-# =========================
-# BOT SETTINGS
-# =========================
 
 POLL_INTERVAL_SECONDS = int(
     os.getenv(
@@ -50,18 +42,6 @@ STREAK_TRIGGER = int(
     )
 )
 
-
-HISTORY_LENGTH = int(
-    os.getenv(
-        "HISTORY_LENGTH",
-        "20"
-    )
-)
-
-
-# =========================
-# PAPER TRADING
-# =========================
 
 INITIAL_BALANCE = float(
     os.getenv(
@@ -82,7 +62,7 @@ BASE_BET = float(
 MAX_BET = float(
     os.getenv(
         "MAX_BET",
-        "32"
+        "16"
     )
 )
 
@@ -90,7 +70,7 @@ MAX_BET = float(
 MAX_LOSS_STREAK = int(
     os.getenv(
         "MAX_LOSS_STREAK",
-        "10"
+        "4"
     )
 )
 
@@ -104,21 +84,13 @@ PAPER_TRADING_ENABLED = (
 )
 
 
-# =========================
-# STORAGE
-# =========================
-
 STATE_FILE = os.getenv(
     "STATE_FILE",
-    "data/state.json"
+    "/var/data/state.json"
 )
 
 
-# =========================
-# TELEGRAM
-# =========================
-
 TELEGRAM_API_URL = (
     "https://api.telegram.org/bot"
-    f"{TELEGRAM_BOT_TOKEN}"
+    + TELEGRAM_BOT_TOKEN
 )
