@@ -86,7 +86,8 @@ PAPER_TRADING_ENABLED = (
 
 STATE_FILE = os.getenv(
     "STATE_FILE",
-    "/var/data/state.json"
+    "/tmp/state.json"
+)
 )
 
 
