@@ -8,38 +8,31 @@ from .config import (
 )
 
 
-logger = logging.getLogger(
-    __name__
-)
+logger = logging.getLogger(__name__)
 
 
 def send_message(
     text: str
 ) -> bool:
 
-    url = (
-        f"{TELEGRAM_API_URL}"
-        "/sendMessage"
-    )
-
-
-    payload = {
-
-        "chat_id": TELEGRAM_CHAT_ID,
-
-        "text": text,
-
-        "parse_mode": "HTML",
-
-        "disable_web_page_preview": True,
-    }
-
-
     try:
 
         response = requests.post(
-            url,
-            json=payload,
+
+            TELEGRAM_API_URL
+            + "/sendMessage",
+
+            json={
+
+                "chat_id": TELEGRAM_CHAT_ID,
+
+                "text": text,
+
+                "parse_mode": "HTML",
+
+                "disable_web_page_preview": True,
+            },
+
             timeout=30
         )
 
@@ -60,6 +53,66 @@ def send_message(
         return False
 
 
+def get_updates(
+    offset: int | None
+) -> list[dict]:
+
+    params = {
+
+        "timeout": 1,
+
+        "allowed_updates": [
+            "message"
+        ],
+    }
+
+
+    if offset is not None:
+
+        params[
+            "offset"
+        ] = offset
+
+
+    try:
+
+        response = requests.get(
+
+            TELEGRAM_API_URL
+            + "/getUpdates",
+
+            params=params,
+
+            timeout=10
+        )
+
+
+        response.raise_for_status()
+
+
+        data = response.json()
+
+
+        if data.get(
+            "ok"
+        ):
+
+            return data.get(
+                "result",
+                []
+            )
+
+
+    except Exception:
+
+        logger.exception(
+            "Telegram update error"
+        )
+
+
+    return []
+
+
 def format_streak_alert(
     alert: dict
 ) -> str:
@@ -74,11 +127,6 @@ def format_streak_alert(
     ]
 
 
-    history = alert[
-        "history"
-    ]
-
-
     opposite = (
         "NO"
         if outcome == "YES"
@@ -87,36 +135,50 @@ def format_streak_alert(
 
 
     sequence = " → ".join(
-        history
-    )
-
-
-    question = alert[
-        "market"
-    ].get(
-        "question",
-        ""
+        alert[
+            "history"
+        ]
     )
 
 
     return (
 
-        "🚨 <b>СИГНАЛ: 5 ОДИНАКОВЫХ "
-        "РЕЗУЛЬТАТОВ ПОДРЯД</b>\n\n"
+        "🚨 <b>СЕРИЯ 5 ПОДРЯД</b>\n\n"
 
         f"🪙 Монета: <b>{coin}</b>\n"
 
-        f"📊 Серия: <b>{outcome}</b> × "
-        f"<b>{len(history)}</b>\n\n"
+        f"📊 Серия: "
+        f"<b>{outcome}</b> × "
+        f"<b>{len(alert['history'])}</b>\n\n"
 
         f"<code>{sequence}</code>\n\n"
 
-        f"🎯 Виртуальная ставка против серии: "
+        f"🎯 PAPER TRADE: "
         f"<b>{opposite}</b>\n"
 
-        f"💵 Начальная ставка: <b>1 USDC</b>\n\n"
+        f"💵 Ставка: "
+        f"<b>1 USDC</b>"
+    )
 
-        f"❓ {question}"
+
+def format_open_trade(
+    trade: dict
+) -> str:
+
+    return (
+
+        "🎯 <b>ВИРТУАЛЬНАЯ СТАВКА ОТКРЫТА</b>\n\n"
+
+        f"🪙 {trade['coin']}\n"
+
+        f"📊 После серии: "
+        f"<b>{trade['signal_outcome']}</b>\n"
+
+        f"🎯 Ставка: "
+        f"<b>{trade['bet_outcome']}</b>\n"
+
+        f"💵 Размер: "
+        f"<b>{trade['bet_size']:.2f}</b> USDC"
     )
 
 
@@ -124,23 +186,15 @@ def format_trade_result(
     result: dict
 ) -> str:
 
-    coin = result[
-        "coin"
-    ]
-
-
-    result_type = result[
+    if result[
         "type"
-    ]
-
-
-    if result_type == "WIN":
+    ] == "WIN":
 
         return (
 
             "✅ <b>PAPER TRADE WIN</b>\n\n"
 
-            f"🪙 {coin}\n"
+            f"🪙 {result['coin']}\n"
 
             f"🎯 Ставка: "
             f"<b>{result['bet_outcome']}</b>\n"
@@ -159,13 +213,15 @@ def format_trade_result(
         )
 
 
-    if result_type == "LOSS":
+    if result[
+        "type"
+    ] == "LOSS":
 
         return (
 
             "❌ <b>PAPER TRADE LOSS</b>\n\n"
 
-            f"🪙 {coin}\n"
+            f"🪙 {result['coin']}\n"
 
             f"🎯 Ставка: "
             f"<b>{result['bet_outcome']}</b>\n"
@@ -189,9 +245,9 @@ def format_trade_result(
 
     return (
 
-        "🛑 <b>PAPER TRADE STOPPED</b>\n\n"
+        "🛑 <b>МАРТИНГЕЙЛ ОСТАНОВЛЕН</b>\n\n"
 
-        f"🪙 {coin}\n"
+        f"🪙 {result['coin']}\n"
 
         f"📌 Результат: "
         f"<b>{result['actual_outcome']}</b>\n\n"
@@ -199,7 +255,7 @@ def format_trade_result(
         f"💸 Потеря: "
         f"<b>-{result['loss']:.2f}</b>\n"
 
-        "⚠️ Лимит мартингейла достигнут.\n\n"
+        "⚠️ Достигнут установленный лимит.\n\n"
 
         f"💰 Баланс: "
         f"<b>{result['balance']:.2f}</b> USDC"
@@ -212,13 +268,13 @@ def format_stats(
 
     return (
 
-        "📊 <b>PAPER TRADING СТАТИСТИКА</b>\n\n"
+        "📊 <b>PAPER TRADING</b>\n\n"
 
         f"💰 Начальный баланс: "
         f"<b>{stats['initial_balance']:.2f}</b>\n"
 
         f"💵 Текущий баланс: "
-        f"<b>{stats['balance']:.2f}</b>\n\n"
+        f"<b>{stats['balance']:.2f}</b>\n"
 
         f"📈 P&L: "
         f"<b>{stats['total_profit']:+.2f}</b>\n\n"
@@ -259,98 +315,26 @@ def format_status(
         f"<b>{stats['balance']:.2f}</b> USDC\n"
 
         f"📈 P&L: "
-        f"<b>{stats['total_profit']:+.2f}</b>\n\n"
-
-        f"🎯 Всего ставок: "
-        f"<b>{stats['total_bets']}</b>\n"
+        f"<b>{stats['total_profit']:+.2f}</b>\n"
 
         f"🔄 Активных сделок: "
         f"<b>{len(active_trades)}</b>\n"
     )
 
 
-    if active_trades:
+    for coin, trade in active_trades.items():
 
-        text += "\n<b>АКТИВНЫЕ СДЕЛКИ:</b>\n"
+        text += (
 
+            f"\n🪙 <b>{coin}</b>\n"
 
-        for coin, trade in active_trades.items():
+            f"🎯 {trade['bet_outcome']}\n"
 
-            text += (
+            f"💵 {trade['bet_size']:.2f} USDC\n"
 
-                f"\n🪙 {coin}\n"
-
-                f"🎯 Ставка: "
-                f"{trade['bet_outcome']}\n"
-
-                f"💵 Размер: "
-                f"{trade['bet_size']}\n"
-
-                f"🔥 Loss streak: "
-                f"{trade['loss_streak']}\n"
-            )
+            f"🔥 Loss streak: "
+            f"{trade['loss_streak']}\n"
+        )
 
 
     return text
-
-
-def get_updates(
-    offset: int | None = None
-) -> list:
-
-    url = (
-        f"{TELEGRAM_API_URL}"
-        "/getUpdates"
-    )
-
-
-    params = {
-
-        "timeout": 1,
-
-        "allowed_updates": [
-            "message"
-        ],
-    }
-
-
-    if offset is not None:
-
-        params[
-            "offset"
-        ] = offset
-
-
-    try:
-
-        response = requests.get(
-            url,
-            params=params,
-            timeout=10
-        )
-
-
-        response.raise_for_status()
-
-
-        data = response.json()
-
-
-        if data.get(
-            "ok"
-        ):
-
-            return data.get(
-                "result",
-                []
-            )
-
-
-    except Exception:
-
-        logger.exception(
-            "Telegram getUpdates error"
-        )
-
-
-    return []
