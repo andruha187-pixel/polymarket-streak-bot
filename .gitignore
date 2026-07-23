@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+
+data/state.json
+data/state.json.tmp
+
+.vscode/
+.idea/
+
+.DS_Store
