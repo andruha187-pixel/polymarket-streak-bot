@@ -4,6 +4,7 @@ import requests
 
 from .config import (
     TELEGRAM_API_URL,
+    TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
 )
 
@@ -11,121 +12,85 @@ from .config import (
 logger = logging.getLogger(__name__)
 
 
-def send_message(
-    text: str
-) -> bool:
+def get_api_url(method: str) -> str:
+    return (
+        f"{TELEGRAM_API_URL.rstrip('/')}"
+        f"/bot{TELEGRAM_BOT_TOKEN}"
+        f"/{method}"
+    )
 
+
+def send_message(text: str) -> bool:
     try:
-
         response = requests.post(
-
-            TELEGRAM_API_URL
-            + "/sendMessage",
-
+            get_api_url("sendMessage"),
             json={
-
                 "chat_id": TELEGRAM_CHAT_ID,
-
                 "text": text,
-
                 "parse_mode": "HTML",
-
                 "disable_web_page_preview": True,
             },
-
-            timeout=30
+            timeout=30,
         )
-
 
         response.raise_for_status()
 
-
         return True
 
-
     except Exception:
-
         logger.exception(
             "Telegram send error"
         )
-
 
         return False
 
 
 def get_updates(
-    offset: int | None
+    offset: int | None,
 ) -> list[dict]:
 
     params = {
-
         "timeout": 1,
-
         "allowed_updates": [
             "message"
         ],
     }
 
-
     if offset is not None:
-
-        params[
-            "offset"
-        ] = offset
-
+        params["offset"] = offset
 
     try:
-
         response = requests.get(
-
-            TELEGRAM_API_URL
-            + "/getUpdates",
-
+            get_api_url("getUpdates"),
             params=params,
-
-            timeout=10
+            timeout=10,
         )
-
 
         response.raise_for_status()
 
-
         data = response.json()
 
-
-        if data.get(
-            "ok"
-        ):
-
+        if data.get("ok"):
             return data.get(
                 "result",
-                []
+                [],
             )
 
-
     except Exception:
-
         logger.exception(
             "Telegram update error"
         )
-
 
     return []
 
 
 def format_streak_alert(
-    alert: dict
+    alert: dict,
 ) -> str:
 
-    coin = alert[
-        "coin"
-    ]
+    coin = alert["coin"]
 
-
-    outcome = alert[
-        "outcome"
-    ]
-
+    outcome = alert["outcome"]
 
     opposite = (
         "NO"
@@ -133,16 +98,11 @@ def format_streak_alert(
         else "YES"
     )
 
-
     sequence = " → ".join(
-        alert[
-            "history"
-        ]
+        alert["history"]
     )
 
-
     return (
-
         "🚨 <b>СЕРИЯ 5 ПОДРЯД</b>\n\n"
 
         f"🪙 Монета: <b>{coin}</b>\n"
@@ -162,11 +122,10 @@ def format_streak_alert(
 
 
 def format_open_trade(
-    trade: dict
+    trade: dict,
 ) -> str:
 
     return (
-
         "🎯 <b>ВИРТУАЛЬНАЯ СТАВКА ОТКРЫТА</b>\n\n"
 
         f"🪙 {trade['coin']}\n"
@@ -183,15 +142,12 @@ def format_open_trade(
 
 
 def format_trade_result(
-    result: dict
+    result: dict,
 ) -> str:
 
-    if result[
-        "type"
-    ] == "WIN":
+    if result["type"] == "WIN":
 
         return (
-
             "✅ <b>PAPER TRADE WIN</b>\n\n"
 
             f"🪙 {result['coin']}\n"
@@ -212,13 +168,9 @@ def format_trade_result(
             f"<b>{result['balance']:.2f}</b> USDC"
         )
 
-
-    if result[
-        "type"
-    ] == "LOSS":
+    if result["type"] == "LOSS":
 
         return (
-
             "❌ <b>PAPER TRADE LOSS</b>\n\n"
 
             f"🪙 {result['coin']}\n"
@@ -242,9 +194,7 @@ def format_trade_result(
             f"<b>{result['balance']:.2f}</b> USDC"
         )
 
-
     return (
-
         "🛑 <b>МАРТИНГЕЙЛ ОСТАНОВЛЕН</b>\n\n"
 
         f"🪙 {result['coin']}\n"
@@ -263,11 +213,10 @@ def format_trade_result(
 
 
 def format_stats(
-    stats: dict
+    stats: dict,
 ) -> str:
 
     return (
-
         "📊 <b>PAPER TRADING</b>\n\n"
 
         f"💰 Начальный баланс: "
@@ -304,11 +253,10 @@ def format_stats(
 
 def format_status(
     stats: dict,
-    active_trades: dict
+    active_trades: dict,
 ) -> str:
 
     text = (
-
         "📡 <b>STATUS</b>\n\n"
 
         f"💰 Баланс: "
@@ -321,11 +269,9 @@ def format_status(
         f"<b>{len(active_trades)}</b>\n"
     )
 
-
     for coin, trade in active_trades.items():
 
         text += (
-
             f"\n🪙 <b>{coin}</b>\n"
 
             f"🎯 {trade['bet_outcome']}\n"
@@ -335,6 +281,5 @@ def format_status(
             f"🔥 Loss streak: "
             f"{trade['loss_streak']}\n"
         )
-
 
     return text
