@@ -31,6 +31,11 @@ class StreakTracker:
             STATE_FILE
         ):
 
+            logger.info(
+                "State file does not exist yet: %s",
+                STATE_FILE
+            )
+
             return
 
 
@@ -47,20 +52,33 @@ class StreakTracker:
                 )
 
 
-            if isinstance(
+            if not isinstance(
                 loaded,
                 dict
             ):
 
-                for key in self.state:
+                logger.warning(
+                    "Invalid state format"
+                )
 
-                    if key in loaded:
+                return
 
-                        self.state[
-                            key
-                        ] = loaded[
-                            key
-                        ]
+
+            for key in self.state:
+
+                if key in loaded:
+
+                    self.state[
+                        key
+                    ] = loaded[
+                        key
+                    ]
+
+
+            logger.info(
+                "State loaded from %s",
+                STATE_FILE
+            )
 
 
         except Exception:
@@ -85,30 +103,54 @@ class StreakTracker:
             )
 
 
-        temporary = (
+        temporary_file = (
             STATE_FILE
             + ".tmp"
         )
 
 
-        with open(
-            temporary,
-            "w",
-            encoding="utf-8"
-        ) as file:
+        try:
 
-            json.dump(
-                self.state,
-                file,
-                ensure_ascii=False,
-                indent=2
+            with open(
+                temporary_file,
+                "w",
+                encoding="utf-8"
+            ) as file:
+
+                json.dump(
+                    self.state,
+                    file,
+                    ensure_ascii=False,
+                    indent=2
+                )
+
+
+            os.replace(
+                temporary_file,
+                STATE_FILE
             )
 
 
-        os.replace(
-            temporary,
-            STATE_FILE
-        )
+        except Exception:
+
+            logger.exception(
+                "Could not save state"
+            )
+
+
+            if os.path.exists(
+                temporary_file
+            ):
+
+                try:
+
+                    os.remove(
+                        temporary_file
+                    )
+
+                except Exception:
+
+                    pass
 
 
     def process_markets(
@@ -136,9 +178,14 @@ class StreakTracker:
 
         for market in markets:
 
-            market_id = market[
+            market_id = market.get(
                 "market_id"
-            ]
+            )
+
+
+            if not market_id:
+
+                continue
 
 
             if market_id in self.state[
@@ -148,14 +195,19 @@ class StreakTracker:
                 continue
 
 
-            coin = market[
+            coin = market.get(
                 "coin"
-            ]
+            )
 
 
-            outcome = market[
+            outcome = market.get(
                 "outcome"
-            ]
+            )
+
+
+            if not coin or not outcome:
+
+                continue
 
 
             if coin not in self.state[
@@ -189,7 +241,6 @@ class StreakTracker:
             )
 
 
-            # Оставляем последние 20
             self.state[
                 "coin_history"
             ][
@@ -235,11 +286,13 @@ class StreakTracker:
 
 
             outcomes = [
+
                 item[
                     "outcome"
                 ]
 
                 for item in last_items
+
             ]
 
 
@@ -267,11 +320,9 @@ class StreakTracker:
 
 
             signature = (
-                coin
-                + ":"
-                + streak_outcome
-                + ":"
-                + last_market_id
+                f"{coin}:"
+                f"{streak_outcome}:"
+                f"{last_market_id}"
             )
 
 
@@ -326,12 +377,20 @@ class StreakTracker:
             "processed_markets"
         ] = []
 
+
         self.state[
             "coin_history"
         ] = {}
+
 
         self.state[
             "alerted_streaks"
         ] = {}
 
+
         self.save()
+
+
+        logger.info(
+            "Tracker history reset"
+        )
